@@ -1,6 +1,8 @@
 // Robot executor runtime for Qumir
 // Implements the Robot field logic with walls, painted cells, radiation/temperature
 
+import { currentLocator, formatLocator } from './locator.js';
+
 let __filesAccessor = null;
 let __addFileCallback = null;
 let __updateFileCallback = null;
@@ -54,6 +56,7 @@ export class RobotField {
     this.symbol = new Map(); // "x,y" -> Symbol column from .fil
     this.symbol1 = new Map(); // "x,y" -> Symbol1 column from .fil
     this.point = new Map(); // "x,y" -> Point column from .fil
+    this.crash = null; // {x, y, side} of the wall the robot ran into
   }
 
   reset() {
@@ -70,6 +73,7 @@ export class RobotField {
     this.symbol.clear();
     this.symbol1.clear();
     this.point.clear();
+    this.crash = null;
   }
 
   resize(width, height) {
@@ -302,10 +306,11 @@ export class RobotField {
 
 export const field = new RobotField();
 
-// Error helper - throws with message
-function robotError(msg) {
-  const line = `Робот: ${msg}`;
-  throw new Error(line);
+// Remembers the wall for the field view and throws with the source location
+// of the command.
+function robotCrash(side, msg, locator) {
+  field.crash = { x: field.robotX, y: field.robotY, side };
+  throw new Error(`Робот: ${msg}${formatLocator(locator)}`);
 }
 
 // File manager integration - same pattern as io.js
@@ -506,33 +511,37 @@ function _robotOp(execute) {
 }
 
 export function robot_left() {
+  const locator = currentLocator();
   return _robotOp(() => {
     ensureFieldLoaded();
-    if (field.hasWallLeft()) robotError('слева стена');
+    if (field.hasWallLeft()) robotCrash('left', 'слева стена', locator);
     field.robotX--;
   });
 }
 
 export function robot_right() {
+  const locator = currentLocator();
   return _robotOp(() => {
     ensureFieldLoaded();
-    if (field.hasWallRight()) robotError('справа стена');
+    if (field.hasWallRight()) robotCrash('right', 'справа стена', locator);
     field.robotX++;
   });
 }
 
 export function robot_up() {
+  const locator = currentLocator();
   return _robotOp(() => {
     ensureFieldLoaded();
-    if (field.hasWallUp()) robotError('сверху стена');
+    if (field.hasWallUp()) robotCrash('up', 'сверху стена', locator);
     field.robotY--;
   });
 }
 
 export function robot_down() {
+  const locator = currentLocator();
   return _robotOp(() => {
     ensureFieldLoaded();
-    if (field.hasWallDown()) robotError('снизу стена');
+    if (field.hasWallDown()) robotCrash('down', 'снизу стена', locator);
     field.robotY++;
   });
 }

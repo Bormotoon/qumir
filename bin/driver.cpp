@@ -17,6 +17,7 @@
 #include <qumir/frontend/source_module_loader.h>
 #include <qumir/codegen/llvm/llvm_codegen.h>
 #include <qumir/codegen/llvm/llvm_initializer.h>
+#include <qumir/modules/builtins/builtins.h>
 #include <qumir/modules/system/system.h>
 #include <qumir/modules/turtle/turtle.h>
 #include <qumir/modules/robot/robot.h>
@@ -107,6 +108,7 @@ NTransform::TPipelineOptions PipelineOptions(bool coreInput) {
 std::vector<std::shared_ptr<NRegistry::IModule>> SetupModules(
     NSemantics::TNameResolver& r, bool coreInput) {
     std::vector<std::shared_ptr<NRegistry::IModule>> modules = {
+        std::make_shared<NRegistry::BuiltinsModule>(),
         std::make_shared<NRegistry::SystemModule>(),
         std::make_shared<NRegistry::TurtleModule>(),
         std::make_shared<NRegistry::RobotModule>(),
@@ -118,6 +120,8 @@ std::vector<std::shared_ptr<NRegistry::IModule>> SetupModules(
     for (const auto& mod : modules) {
         r.RegisterModule(mod.get());
     }
+    // Like the runners: Builtins is always imported, independent of the frontend.
+    (void)r.ImportModule(NRegistry::BuiltinsModule::ModuleName);
     (void)r.ImportModule("System");
     if (!coreInput) {
         for (const auto& [alias, canonical] : NSemantics::NKumir::ModuleAliases()) {
@@ -128,15 +132,17 @@ std::vector<std::shared_ptr<NRegistry::IModule>> SetupModules(
 }
 
 std::shared_ptr<std::istream> OpenInputFile(const std::string& filename) {
-    if (filename == "-") {
-        return std::make_shared<std::istream>(std::cin.rdbuf());
-    } else {
-        auto fileStream = std::make_shared<std::ifstream>(filename);
-        if (!fileStream->is_open()) {
+    std::ifstream file;
+    if (filename != "-") {
+        file.open(filename);
+        if (!file.is_open()) {
             return nullptr;
         }
-        return fileStream;
     }
+    std::istream& in = filename == "-" ? std::cin : file;
+    std::string source((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    SignErrorsIfMarked(source, "Qumir " QUMIR_VERSION_STRING ", https://github.com/resetius/qumir");
+    return std::make_shared<std::istringstream>(std::move(source));
 }
 
 std::shared_ptr<std::ostream> OpenOutputFile(const std::string& filename, bool randomAccess = false) {

@@ -1673,6 +1673,14 @@ TExpectedTask<TAstLowerer::TValueWithBlock, TError, TLocation> TAstLowerer::Lowe
 
             argv.push_back(*av.Value);
         }
+        if (funDecl->NeedsLocator) {
+            auto locatorId = co_await GlobalSymbolId("builtin::record_locator");
+            const int i64 = Module.Types.I(EKind::I64);
+            Builder.Emit0("arg"_op, {TImm{.Value = call->Location.Line, .TypeId = i64}});
+            Builder.Emit0("arg"_op, {TImm{.Value = call->Location.Byte, .TypeId = i64}});
+            Builder.Emit0("arg"_op, {TImm{.Value = call->Location.Column, .TypeId = i64}});
+            Builder.Emit0("call"_op, {TImm{locatorId}});
+        }
         for (auto arg : argv) {
             Builder.Emit0("arg"_op, {arg});
         }
