@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { readFileSync } from 'node:fs';
+import { request as httpRequest } from 'node:http';
+import { request as httpsRequest } from 'node:https';
 import puppeteer from 'puppeteer';
 
 const url = process.env.QUMIR_TEST_URL || 'http://127.0.0.1:8097/';
@@ -71,6 +73,21 @@ async function finished(page) {
   assert.equal(await page.$eval('.CodeMirror', el => el.CodeMirror.getOption('readOnly')), false);
 }
 
+async function compile(source, headers) {
+  return await new Promise((resolve, reject) => {
+    const request = (url.startsWith('https:') ? httpsRequest : httpRequest)(new URL('/api/compile-wasm', url), {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain', 'Content-Length': Buffer.byteLength(source), ...headers },
+    }, response => {
+      const chunks = [];
+      response.on('data', chunk => chunks.push(chunk));
+      response.on('end', () => resolve({ status: response.statusCode, headers: response.headers, body: Buffer.concat(chunks) }));
+    });
+    request.on('error', reject);
+    request.end(source);
+  });
+}
+
 try {
   browser = await puppeteer.launch({ headless: true, args: ['--ignore-certificate-errors'] });
   const page = await openPage();
@@ -89,6 +106,20 @@ try {
   assert.equal(await page.evaluate(() => typeof WebAssembly.Suspending), 'function');
   const simple = 'алг цел main\nнач\n  цел x\n  x := twice(21)\n  вывод x, нс\n  знач := x\nкон\n\n'
     + 'алг цел twice(цел n)\nнач\n  цел next\n  next := n + 1\n  знач := next * 2\nкон\n';
+  for (const header of ['X-Qumir-Debug-Points', 'x-qumir-debug-points', 'x-QuMiR-dEbUg-PoInTs']) {
+    const response = await compile(simple, { [header]: '1', 'x-qumir-o': '3', 'x-qumir-async-mode': 'jspi' });
+    assert.equal(response.status, 200, response.body.toString());
+    assert.equal(response.headers['x-qumir-o'], '0');
+    assert.equal(WebAssembly.Module.customSections(new WebAssembly.Module(response.body), 'qumir.debug').length, 1);
+  }
+  const core = await compile('(block (fun main () -> i64 (block (return 42))))', { 'x-qumir-syntax': 'core' });
+  assert.equal(core.status, 200, core.body.toString());
+  const coroutine = await compile(simple, { 'x-qumir-o': '3', 'x-qumir-async-mode': 'coroutine' });
+  assert.equal(coroutine.status, 200, coroutine.body.toString());
+  assert.equal(coroutine.headers['x-qumir-o'], '3');
+  const coroutineModule = new WebAssembly.Module(coroutine.body);
+  assert.equal(WebAssembly.Module.customSections(coroutineModule, 'qumir.debug').length, 0);
+  assert.equal(JSON.parse(new TextDecoder().decode(WebAssembly.Module.customSections(coroutineModule, 'qumir.runtime')[0])).mode, 'coroutine');
   await code(page, simple);
   await page.click('[data-pane-action="dock"][data-pane-target="io"]');
   await page.waitForSelector('.run-hint-arrow.show', { timeout: 15000 });

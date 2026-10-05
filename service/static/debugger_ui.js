@@ -22,6 +22,9 @@ export class DebuggerUI {
       if (this.breakpoints.has(line + 1)) this.breakpoints.delete(line + 1);
       else this.breakpoints.add(line + 1);
       this.drawBreakpoints();
+      if (this.breakpoints.has(line + 1)) {
+        panel.dispatchEvent(new CustomEvent('qumir-breakpoint-set', { bubbles: true, detail: { line: line + 1 } }));
+      }
     });
     editor.on('changes', () => {
       if (this.debugger) return;
@@ -88,6 +91,9 @@ export class DebuggerUI {
     locals.replaceChildren();
     if (!paused) return;
     this.selected = this.debugger.frames.at(-1);
+    if (this.selected.point.kind === 'statement' && this.breakpoints.has(this.selected.point.line)) {
+      this.panel.dispatchEvent(new CustomEvent('qumir-breakpoint-hit', { bubbles: true, detail: { line: this.selected.point.line } }));
+    }
     for (const frame of [...this.debugger.frames].reverse()) {
       const button = document.createElement('button');
       button.type = 'button';
