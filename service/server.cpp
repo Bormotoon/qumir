@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <chrono>
 #include <iostream>
 #include <fstream>
@@ -8,6 +9,7 @@
 
 #include <filesystem>
 
+#include <llvm/ADT/StringRef.h>
 #include <llvm/Support/JSON.h>
 #include <llvm/Support/Error.h>
 
@@ -25,6 +27,13 @@
 using namespace NNet;
 
 namespace {
+
+auto FindHeader(const TRequest& request, std::string_view name) {
+    const auto& headers = request.Headers();
+    return std::find_if(headers.begin(), headers.end(), [name](const auto& header) {
+        return llvm::StringRef(header.first).equals_insensitive(name);
+    });
+}
 
 std::string UrlEncode(const std::string& str) {
     std::string result;
@@ -443,7 +452,7 @@ private:
 
     TFuture<void> Compile(TRequest& request, TResponse& response, const std::string& target) {
         int olevel = 0;
-        auto it = request.Headers().find("X-Qumir-O");
+        auto it = FindHeader(request, "X-Qumir-O");
         if (it != request.Headers().end()) {
             std::string val(it->second);
             bool ok = true;
@@ -461,7 +470,7 @@ private:
 
         bool coreInput = false;
         {
-            auto sit = request.Headers().find("X-Qumir-Syntax");
+            auto sit = FindHeader(request, "X-Qumir-Syntax");
             if (sit != request.Headers().end() && sit->second == "core") {
                 coreInput = true;
             }
@@ -543,7 +552,7 @@ private:
         std::string dst;
         std::string contentType = "application/wasm";
         dst = src + ".wasm";
-        auto mode = request.Headers().find("X-Qumir-Async-Mode");
+        auto mode = FindHeader(request, "X-Qumir-Async-Mode");
         const std::string asyncMode = mode == request.Headers().end()
             ? "jspi"
             : std::string(mode->second);
@@ -551,8 +560,8 @@ private:
             co_await SendJson(response, "{\"error\":\"invalid async mode\"}", 400);
             co_return;
         }
-        const bool debugPoints = request.Headers().contains("X-Qumir-Debug-Points")
-            && request.Headers().at("X-Qumir-Debug-Points") == "1";
+        auto debug = FindHeader(request, "X-Qumir-Debug-Points");
+        const bool debugPoints = debug != request.Headers().end() && debug->second == "1";
         if (debugPoints) {
             olevel = 0;
         }
