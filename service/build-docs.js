@@ -21,21 +21,26 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // Парсинг аргументов командной строки
 const args = process.argv.slice(2);
 let canonicalPrefix = null;
+let srcRoot = path.join(__dirname, '..');
+let outDir = null;
 
 for (const arg of args) {
   if (arg.startsWith('--canonical_prefix=')) {
-    canonicalPrefix = arg.split('=')[1];
-    break;
+    canonicalPrefix = arg.slice('--canonical_prefix='.length);
+  } else if (arg.startsWith('--src-root=')) {
+    srcRoot = path.resolve(arg.slice('--src-root='.length));
+  } else if (arg.startsWith('--out=')) {
+    outDir = path.resolve(arg.slice('--out='.length));
   }
 }
 
 // Папка с markdown-файлами
-const DOCS_SRC = path.join(__dirname, '../docs/ru');
+const DOCS_SRC = path.join(srcRoot, 'docs/ru');
 // Папка для готовых html
-const DOCS_OUT = path.join(__dirname, '../service/static/docs-static');
+const DOCS_OUT = outDir || path.join(srcRoot, 'service/static/docs-static');
 
 // Читаем шаблон docs.html
-const TEMPLATE = fs.readFileSync(path.join(__dirname, '../service/static/docs.html'), 'utf8');
+const TEMPLATE = fs.readFileSync(path.join(srcRoot, 'service/static/docs.html'), 'utf8');
 
 // Вырезаем <main>...</main> из шаблона
 const MAIN_RE = /<main[^>]*id="docs-main"[^>]*>[\s\S]*?<\/main>/i;
@@ -188,7 +193,7 @@ function buildOne(mdFile, { srcDir = DOCS_SRC, mode = 'docs' } = {}) {
   // Insert sidebar before <main>
   outHtml = outHtml.replace(/(<div class="docs-page-layout">\s*)/, `$1${renderSidebar(mdFile, mode, prefix)}\n`);
   // Insert main content
-  outHtml = outHtml.replace(MAIN_RE, `<main class="docs-page-main" id="docs-main">${contentWithFixedLinks}</main>`);
+  outHtml = outHtml.replace(MAIN_RE, `<main class="docs-page-main" id="docs-main" data-doc-path="${mdFile}">${contentWithFixedLinks}</main>`);
   // Ensure metrika.local.js is present after </footer>
   if (!outHtml.includes('metrika.local.js')) {
     outHtml = outHtml.replace(/(<\/footer>)/, `$1\n  <script src="/metrika.local.js"></script>`);
@@ -258,7 +263,7 @@ function buildOne(mdFile, { srcDir = DOCS_SRC, mode = 'docs' } = {}) {
   console.log('Built:', htmlPath);
 }
 
-const ARCH_SRC = path.join(__dirname, '../docs/arch');
+const ARCH_SRC = path.join(srcRoot, 'docs/arch');
 
 fs.mkdirSync(DOCS_OUT, { recursive: true });
 

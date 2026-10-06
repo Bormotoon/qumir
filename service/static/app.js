@@ -2,6 +2,10 @@
 
 import { DebuggerUI } from './debugger_ui.js';
 import { supportsJspi, ExecutionStopped } from './runtime/execution_session.js';
+import { consumeExample, exampleData } from './example_data.js';
+
+const embedded = document.body.dataset.qumirMode === 'embed';
+let activeRun = null;
 
 let debuggerUI = null;
 let executionSession = null;
@@ -159,11 +163,17 @@ function setCode(text) {
 }
 
 function setCookie(name, value, days = 365) {
+  if (embedded) {
+    return;
+  }
   const expires = `max-age=${days*24*60*60}`;
   document.cookie = `${encodeURIComponent(name)}=${encodeURIComponent(value)}; ${expires}; path=/`;
 }
 
 function getCookie(name) {
+  if (embedded) {
+    return null;
+  }
   const n = encodeURIComponent(name) + '=';
   const parts = document.cookie.split(';');
   for (let p of parts) {
@@ -174,6 +184,9 @@ function getCookie(name) {
 }
 
 function readPersistedValue(name) {
+  if (embedded) {
+    return null;
+  }
   try {
     if (typeof window !== 'undefined' && window.localStorage) {
       const stored = window.localStorage.getItem(name);
@@ -186,6 +199,9 @@ function readPersistedValue(name) {
 }
 
 function writePersistedValue(name, value) {
+  if (embedded) {
+    return;
+  }
   const payload = value ?? '';
   try {
     if (typeof window !== 'undefined' && window.localStorage) {
@@ -346,7 +362,7 @@ function applyProjectToInputs(project, { silent = false } = {}) {
     saveState();
   }
   // Preview robot field if code uses robot and .fil file exists
-  tryPreviewRobotField(project.code, project.files);
+  return tryPreviewRobotField(project.code, _projectFiles);
 }
 
 // Check if code likely uses robot (by looking for robot keywords)
@@ -1566,6 +1582,9 @@ function addErrorHighlights(errors) {
 }
 
 async function show(mode, { clearErrorsOnSuccess = true } = {}) {
+  if (embedded) {
+    return;
+  }
   const code = getCode();
   const O = $('#opt').value;
   const map = {
@@ -1787,7 +1806,7 @@ function ensureTurtleUI() {
     animCheckbox.style.cursor = 'pointer';
     animCheckbox.title = 'Включить анимацию черепахи';
     const savedTurtleAnim = getCookie('q_turtle_anim');
-    animCheckbox.checked = savedTurtleAnim === '1';
+    animCheckbox.checked = embedded || savedTurtleAnim === '1';
 
     const speedLabel = document.createElement('span');
     speedLabel.textContent = '🐢';
@@ -3004,11 +3023,17 @@ async function runWasm(debug = false) {
   resetCoroStopSignal();
   let runAsCoroutine = false;
   let runtime = null;
+  let compiled = false;
+  let outcome = 'run_ok';
   const debuggerInstance = debug ? debuggerUI?.begin() : null;
   executionAbort = new AbortController();
   setCoroRunning(true);
+  if (embedded) {
+    document.dispatchEvent(new CustomEvent('qumir-embed-event', { detail: 'run' }));
+  }
   try {
     const bytes = await api('/api/compile-wasm', { code, O, debug, asyncMode: supportsJspi() ? 'jspi' : 'coroutine' }, true, executionAbort.signal);
+    compiled = true;
     const { loadRuntime } = await import('./runtime/loader.js');
     runtime = await loadRuntime(bytes, {
       debugger: debuggerInstance,
@@ -3246,6 +3271,11 @@ async function runWasm(debug = false) {
     const stopped = __coroStopRequested;
     let successMsg = stopped ? 'Остановлено' : 'Успешно';
     const missingInput = runtime.stdinStream ? runtime.stdinStream.missingReads() : 0;
+    if (stopped) {
+      outcome = 'run_stopped';
+    } else if (missingInput) {
+      outcome = 'run_error';
+    }
     if (window.__lastRunInfo) {
       const info = window.__lastRunInfo;
       if (info.hasReturn) {
@@ -3265,7 +3295,7 @@ async function runWasm(debug = false) {
 
     // Celebration for successful runs
     // ========================================
-    if (!stopped) {
+    if (!stopped && !embedded) {
       __successfulRunsCount++;
       setCookie('q_runs_count', String(__successfulRunsCount), 365);
       if (__successfulRunsCount === 1 || __successfulRunsCount % 10 === 0) {
@@ -3275,6 +3305,7 @@ async function runWasm(debug = false) {
     // ========================================
   } catch (e) {
     const stopped = e instanceof ExecutionStopped || (__coroStopRequested && e.name === 'AbortError');
+    outcome = stopped ? 'run_stopped' : compiled ? 'run_error' : 'run_compile_error';
     const errMsg = stopped ? 'Остановлено' : e.message || String(e);
 
     // Parse error for line number: "@ Line: 8, Byte: 4, Column: 4"
@@ -3311,6 +3342,9 @@ async function runWasm(debug = false) {
     __browserFileManager?.reset?.();
     if (debug) debuggerUI?.finish();
     setCoroRunning(false);
+    if (embedded) {
+      document.dispatchEvent(new CustomEvent('qumir-embed-event', { detail: outcome }));
+    }
   }
 }
 
@@ -3488,6 +3522,9 @@ function loadState() {
 }
 
 function saveState() {
+  if (embedded) {
+    return;
+  }
   updateActiveProjectFromInputs();
   writePersistedValue('q_code', getCode());
   writePersistedValue('q_args', $('#args').value || '');
@@ -3549,7 +3586,9 @@ function initEditor() {
   });
   // Responsive height: fixed on desktop, auto on mobile (CSS controls heights)
   const __applyEditorHeight = () => {
-    if (window.innerWidth <= 900) {
+    if (embedded) {
+      editor.setSize(null, '300px');
+    } else if (window.innerWidth <= 900) {
       editor.setSize(null, 'auto');
     } else {
       editor.setSize(null, '100%');
@@ -4247,7 +4286,10 @@ function setupPaneHeaderControls() {
 
 // Diagnostic check for critical elements
 (() => {
-  const critical = ['code', 'args', 'stdin', 'stdout', 'view', 'opt', 'btn-run', 'examples'];
+  const critical = ['code', 'args', 'stdin', 'stdout', 'view', 'opt', 'btn-run'];
+  if (!embedded) {
+    critical.push('examples');
+  }
   const missing = critical.filter(id => !document.getElementById(id));
   if (missing.length > 0) {
     console.error('Critical elements missing:', missing);
@@ -4255,10 +4297,15 @@ function setupPaneHeaderControls() {
 })();
 
 initIoWorkspace();  // Must be before loadState() so __ioFilesRoot is ready
-loadState();
-initProjectsUI();
+if (!embedded) {
+  loadState();
+  initProjectsUI();
+}
 // Load examples list
 (async function initExamples(){
+  if (embedded) {
+    return;
+  }
   try {
     const data = await apiGet('/api/examples');
     const sel = $('#examples');
@@ -4302,10 +4349,12 @@ initProjectsUI();
 })();
 // Initialize editor (assets are loaded via HTML)
 initEditor();
-setupWorkspaceSplitters();
-setupPaneHeaderControls();
-setupIoDocking();
-setupPreviewDocking();
+if (!embedded) {
+  setupWorkspaceSplitters();
+  setupPaneHeaderControls();
+  setupIoDocking();
+  setupPreviewDocking();
+}
 
 // Relocate the compiler view selector above the Output on mobile
 (function relocateViewSelector(){
@@ -4359,6 +4408,9 @@ setupPreviewDocking();
 // The project name is "Проект (открыт из ссылки <id>)". If a project with that
 // name already exists, its contents are overwritten instead of creating a new one.
 (async function loadSharedFromQuery(){
+  if (embedded) {
+    return;
+  }
   try {
     const params = new URLSearchParams(window.location.search);
     const sid = params.get('share');
@@ -4431,6 +4483,9 @@ setupPreviewDocking();
 
 // If URL has ?example=<path>, load that example directly
 (async function loadExampleFromQuery(){
+  if (embedded) {
+    return;
+  }
   try {
     const params = new URLSearchParams(window.location.search);
     const examplePath = params.get('example');
@@ -4473,6 +4528,9 @@ setupPreviewDocking();
 
 // The footer shows only the compiler revision; the full strings live in a dialog.
 (async function showVersion(){
+  if (embedded) {
+    return;
+  }
   // "1.0.0-42,2a77288,2026-08-15" -> "2a77288";  "dev,2026-08-15" -> "dev"
   const shortRev = (value) => {
     const parts = String(value || '').split(',');
@@ -4887,6 +4945,9 @@ ${indent}знач := a
 // Debounce auto-show on code edits to avoid spamming service
 let showTimer = null;
 const debounceShow = () => {
+  if (embedded) {
+    return;
+  }
   if (showTimer) clearTimeout(showTimer);
   showTimer = setTimeout(() => show($('#view').value), 350);
 };
@@ -4906,6 +4967,9 @@ show($('#view').value);
 
 // Run hint arrow logic
 (function setupRunHint() {
+  if (embedded) {
+    return;
+  }
   let hintTimer = null;
   let arrowEl = null;
   let hasCompilationErrors = false;
@@ -4975,19 +5039,23 @@ show($('#view').value);
 $('#btn-run').addEventListener('click', async () => {
   if (window.__runHintOnRun) window.__runHintOnRun();
 
-  await runWasm();
+  activeRun = runWasm();
+  await activeRun;
+  activeRun = null;
   show($('#view').value, { clearErrorsOnSuccess: false });
 });
 
-if (editor) debuggerUI = new DebuggerUI(editor, document.getElementById('debug-panel'));
-$('#btn-debug').disabled = !supportsJspi() || !debuggerUI;
-if (!supportsJspi()) $('#btn-debug').title = 'Этот браузер не поддерживает JSPI';
-$('#btn-debug').addEventListener('click', async () => {
-  if (window.__runHintOnRun) {
-    window.__runHintOnRun();
-  }
-  await runWasm(true);
-});
+if (!embedded) {
+  if (editor) debuggerUI = new DebuggerUI(editor, document.getElementById('debug-panel'));
+  $('#btn-debug').disabled = !supportsJspi() || !debuggerUI;
+  if (!supportsJspi()) $('#btn-debug').title = 'Этот браузер не поддерживает JSPI';
+  $('#btn-debug').addEventListener('click', async () => {
+    if (window.__runHintOnRun) {
+      window.__runHintOnRun();
+    }
+    await runWasm(true);
+  });
+}
 
 $('#btn-stop').addEventListener('click', () => {
   signalCoroStop();
@@ -5088,6 +5156,59 @@ $('#btn-stop').addEventListener('click', () => {
     });
   });
 })();
+
+export function embeddedExampleData() {
+  if (!embedded) {
+    throw new Error('Страница не является учебным примером');
+  }
+  return exampleData(captureCurrentEditorState());
+}
+
+export async function stopEmbeddedExample() {
+  if (!embedded) {
+    return;
+  }
+  signalCoroStop();
+  await activeRun;
+}
+
+export async function loadEmbeddedExample(value) {
+  if (!embedded) {
+    throw new Error('Страница не является учебным примером');
+  }
+  const data = exampleData(value);
+  await stopEmbeddedExample();
+  clearErrorHighlights();
+  __robotEditEnabled = false;
+  __executorToolbarMode = null;
+  __turtleModule?.__resetTurtle?.(true);
+  __drawerModule?.__resetDrawer?.(true);
+  __painterModule?.__resetPainter?.();
+  setCompilerOutputMode('text');
+  $('#stdout').textContent = '';
+  await applyProjectToInputs({ ...data, args: '' }, { silent: true });
+  setErrorsPaneContent('Нажмите «Запустить», чтобы проверить пример');
+  setActiveIoPane(data.stdin ? 'stdin' : 'stdout', { persistCookie: false });
+}
+
+const importId = new URLSearchParams(location.search).get('doc-import');
+if (!embedded) {
+  if (importId) {
+    try {
+      const data = consumeExample(importId);
+      updateActiveProjectFromInputs();
+      createProject({ name: 'Пример из документации', ...data }, { activate: true });
+      saveState();
+      debounceShow();
+    } catch (error) {
+      setErrorsPaneContent(error.message, { isError: true });
+      setActiveIoPane('errors', { persistCookie: false });
+    }
+    const url = new URL(location.href);
+    url.searchParams.delete('doc-import');
+    history.replaceState(null, '', url);
+  }
+}
 
 // Toast helper
 let __toastEl = null;
@@ -5195,7 +5316,7 @@ if (btnShare) {
   if (window.innerWidth <= 900) return;
   // Visitors who came by a link to a program came for that program.
   const params = new URLSearchParams(window.location.search);
-  if (params.has('example') || params.has('share') || window.location.pathname.startsWith('/s/')) return;
+  if (params.has('example') || params.has('share') || importId || window.location.pathname.startsWith('/s/')) return;
 
   const initTour = async () => {
     try {

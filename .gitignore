@@ -47,3 +47,5 @@ build
 node_modules
 __pycache__
 docs/issues
+# Local browser checks and their artifacts.
+test-excluded/

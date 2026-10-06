@@ -1,3 +1,11 @@
+qumir-example, qumir-file, qumir-input { display: block; }
+qumir-example { margin: 20px 0; min-width: 0; }
+qumir-file::before { content: "Файл: " attr(name); font-weight: 600; }
+qumir-input::before { content: "Входные данные"; font-weight: 600; }
+.qumir-example-frame { display: block; width: 100%; border: 1px solid #444; border-radius: 6px; box-sizing: border-box; }
+.qumir-example-notice { margin: 8px 0; color: #bbb; }
+qumir-example[data-ready="true"] > .qumir-example-source { display: none; }
+
 /* Developer mode: hide advanced controls by default */
 .dev-only { display: none !important; }
 body.dev-mode .dev-only { display: inline-block !important; }

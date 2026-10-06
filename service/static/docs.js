@@ -5,6 +5,7 @@
  */
 
 const DOCS_BASE = '/docs/';
+import './doc_examples.js';
 
 // Image paths in the markdown are relative to the .md file.
 function resolveDocImages(html, filename) {
@@ -49,6 +50,7 @@ export function openDocs() {
  */
 export function closeDocs() {
   if (docsDrawer) {
+    docsDrawer.querySelectorAll('qumir-example').forEach(example => example.stop());
     docsDrawer.classList.remove('open');
     docsDrawer.setAttribute('aria-hidden', 'true');
   }
@@ -70,6 +72,7 @@ export function toggleDocs() {
  */
 async function loadDoc(filename, addToHistory = true) {
   if (!docsContent) return;
+  docsContent.dataset.docPath = filename;
 
   // Update navigation
   updateNavActive(filename);
@@ -115,7 +118,8 @@ async function loadDoc(filename, addToHistory = true) {
       if (href && href.endsWith('.md') && !href.startsWith('http')) {
         link.addEventListener('click', (e) => {
           e.preventDefault();
-          loadDoc(href, true);
+          const target = new URL(href, location.origin + DOCS_BASE + filename);
+          loadDoc(target.pathname.slice(DOCS_BASE.length), true);
         });
       }
     });

@@ -200,7 +200,7 @@
 
     @media (max-width: 768px) {
       .docs-page-layout { flex-direction: column; }
-      .docs-page-sidebar { width: 100%; min-width: 0; border-right: none; border-bottom: 1px solid #333; padding: 10px; display: flex; flex-wrap: wrap; gap: 6px; }
+      .docs-page-sidebar { width: 100%; min-width: 0; max-height: 160px; box-sizing: border-box; border-right: none; border-bottom: 1px solid #333; padding: 10px; display: flex; flex-wrap: wrap; gap: 6px; }
       .docs-page-sidebar a { padding: 8px 12px; border-left: none; border-radius: 4px; background: #2a2a2a; }
       .docs-page-sidebar a.active { background: #0e639c; border-left: none; }
       .docs-page-main { padding: 20px; }
@@ -254,6 +254,7 @@
     Inspired by Ershov's language and KuMir
   </footer>
   <script src="metrika.local.js"></script>
+  <script type="module" src="/doc_examples.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
   <script>
     // SPA DOCS SCRIPT — removed in static build
@@ -301,6 +302,7 @@
     }
 
     async function loadDoc(filename) {
+      main.dataset.docPath = filename;
       const mode = getMode(filename);
       if (mode !== currentMode) setMode(mode);
 
@@ -341,7 +343,8 @@
           if (href && href.endsWith('.md') && !href.startsWith('http')) {
             link.addEventListener('click', e => {
               e.preventDefault();
-              loadDoc(href);
+              const target = new URL(href, location.origin + DOCS_BASE + filename);
+              loadDoc(target.pathname.slice(DOCS_BASE.length));
             });
           }
           if (href && href.startsWith('#')) {
