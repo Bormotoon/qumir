@@ -1,0 +1,6 @@
+(block
+  (use "Робот")
+  (fun <main> ()
+    (block
+      (cleanup-exit (return))))
+  (times 3 (block (await (call закрасить)))))

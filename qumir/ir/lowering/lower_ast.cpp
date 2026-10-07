@@ -2207,7 +2207,7 @@ std::expected<std::monostate, TError> TAstLowerer::LowerTop(const NAst::TExprPtr
             } else if (NAst::TMaybeNode<NAst::TTypeDeclStmt>(s)) {
                 // Type declarations are registered during name resolution; nothing to lower.
             } else {
-                return std::unexpected(TError(s->Location, TErrorString::Get<EErrorId::UNEXPECTED_TOP_LEVEL_STATEMENT>(s->ToString())));
+                return std::unexpected(TError(s->Location, TErrorString::Get<EErrorId::UNEXPECTED_TOP_LEVEL_STATEMENT>()));
             }
         }
 
